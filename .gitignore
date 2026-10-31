@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.Readme.md
+.CONFIGURATION.md
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+coverage/
+
+# Local development data
+backend/data/*.local.json
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+
+# Editor and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
