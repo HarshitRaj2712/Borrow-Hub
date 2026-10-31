@@ -9,15 +9,26 @@ const userSchema = new mongoose.Schema({
   tokenVersion: { type: Number, default: 0 },
   refreshTokenHash: { type: String, select: false },
   refreshTokenExpiresAt: { type: Date, select: false },
+  refreshTokens: {
+    type: [{
+      hash: { type: String, required: true },
+      expiresAt: { type: Date, required: true },
+      userAgent: { type: String, default: '' }
+    }],
+    select: false,
+    default: []
+  },
   passwordResetTokenHash: { type: String, select: false },
   passwordResetTokenExpiresAt: { type: Date, select: false },
-  role: { type: String, enum: ['member', 'borrower', 'lender', 'admin'], default: 'member', index: true },
-  gender: { type: String, enum: ['male', 'female', 'non_binary', 'prefer_not_to_say'], required: true },
+  role: { type: String, enum: ['user', 'admin'], default: 'user', index: true },
+  gender: { type: String, enum: ['male', 'female', 'non_binary', 'prefer_not_to_say'], default: 'prefer_not_to_say' },
   emailVerified: { type: Boolean, default: false },
   phoneVerified: { type: Boolean, default: false },
   identityVerified: { type: Boolean, default: false },
   identityVerificationStatus: { type: String, enum: ['not_started', 'pending', 'approved', 'rejected'], default: 'not_started' },
+  trustScore: { type: Number, min: 0, max: 5, default: 0 },
   avatarUrl: { type: String, trim: true, maxlength: 500, default: '' },
+  avatarPublicId: { type: String, trim: true, default: '' },
   privacySettings: {
     showEmail: { type: Boolean, default: false },
     showPhone: { type: Boolean, default: false },

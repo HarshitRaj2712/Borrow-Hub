@@ -7,6 +7,7 @@ export function errorHandler(error, _req, res, _next) {
   if (error.name === 'ZodError') return res.status(400).json({ error: 'Validation failed', details: error.issues.map(issue => ({ field: issue.path.join('.'), message: issue.message })) })
   if (error.code === 'EMAIL_NOT_CONFIGURED') return res.status(503).json({ error: error.message })
   if (error.code === 'CLOUDINARY_NOT_CONFIGURED') return res.status(503).json({ error: error.message })
+  if (error.status === 400 && error.message?.startsWith('Invalid image file')) return res.status(400).json({ error: error.message })
   if (error instanceof Error && error.name === 'MulterError') return res.status(400).json({ error: error.message })
   if (error.code === 11000) return res.status(409).json({ error: 'A record with those details already exists' })
   if (error.name === 'CastError') return res.status(400).json({ error: `Invalid ${error.path}` })

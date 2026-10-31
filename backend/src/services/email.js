@@ -48,6 +48,29 @@ export async function sendBookingReminderEmail(user, booking) {
   })
 }
 
+export async function sendBookingOverdueEmail(user, booking, overdueDays) {
+  const transporter = createTransporter()
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: user.email,
+    subject: `Borrow Hub overdue return: ${booking.itemTitle}`,
+    text: `Your booking for ${booking.itemTitle} is ${overdueDays} day${overdueDays === 1 ? '' : 's'} overdue. Please arrange the return with the owner.`,
+    html: `<p>Your booking for <strong>${escapeHtml(booking.itemTitle)}</strong> is ${overdueDays} day${overdueDays === 1 ? '' : 's'} overdue.</p><p>Please arrange the return with the owner.</p>`
+  })
+}
+
+export async function sendIdentityVerificationResultEmail(user, status, rejectionReason = '') {
+  const transporter = createTransporter()
+  const outcome = status === 'approved' ? 'approved' : `rejected${rejectionReason ? `: ${rejectionReason}` : ''}`
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM,
+    to: user.email,
+    subject: 'Borrow Hub identity verification update',
+    text: `Your Borrow Hub identity verification request was ${outcome}.`,
+    html: `<p>Your Borrow Hub identity verification request was <strong>${escapeHtml(outcome)}</strong>.</p>`
+  })
+}
+
 function createToken(durationMs) {
   const token = crypto.randomBytes(32).toString('hex')
   return { token, hash: hashToken(token), expiresAt: new Date(Date.now() + durationMs) }

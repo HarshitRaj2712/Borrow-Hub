@@ -9,4 +9,7 @@ const reportSchema = new mongoose.Schema({
   status: { type: String, enum: ['open', 'reviewing', 'resolved', 'dismissed'], default: 'open', index: true }
 }, { timestamps: true, versionKey: false })
 
+reportSchema.index({ reporterId: 1, itemId: 1 }, { unique: true, partialFilterExpression: { itemId: { $exists: true } } })
+reportSchema.index({ reporterId: 1, userId: 1 }, { unique: true, partialFilterExpression: { userId: { $exists: true } } })
+
 export const Report = mongoose.models.Report || mongoose.model('Report', reportSchema)

@@ -8,7 +8,7 @@ import './styles.css'
 import './feature-styles.css'
 import {
   createBorrowRequest, createItem, getAvailability, getProfile, listBookings, listItems, listMyItems, logoutUser,
-  loginUser, registerUser, resendVerification, resetPassword, verifyEmail, forgotPassword, updateBookingStatus, updateProfile
+  loginUser, registerUser, resendVerification, resetPassword, verifyEmail, forgotPassword, updateBookingStatus, updateProfile, recordItemActivity
 } from './api'
 
 const demoItems = [
@@ -142,7 +142,11 @@ function ItemModal({ item, session, close, showToast, openAuth }) {
   const [dates, setDates] = useState({ startDate: '', endDate: '' })
   const [availability, setAvailability] = useState(null)
   const [error, setError] = useState('')
-  useEffect(() => { if (item.id) getAvailability(item.id).then(({ data }) => setAvailability(data)).catch(() => {}) }, [item.id])
+  useEffect(() => {
+    if (!item.id) return
+    getAvailability(item.id).then(({ data }) => setAvailability(data)).catch(() => {})
+    if (session?.token) recordItemActivity(item.id, session.token).catch(() => {})
+  }, [item.id, session?.token])
   const submit = async event => {
     event.preventDefault()
     if (!session) return openAuth()

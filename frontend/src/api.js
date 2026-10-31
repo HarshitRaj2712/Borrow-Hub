@@ -139,3 +139,47 @@ export function updateBookingStatus(id, status, token) {
 export function getAvailability(itemId) {
   return request(`/availability/items/${itemId}`)
 }
+
+export function listRecommendations(token) {
+  return request('/recommendations', { headers: { Authorization: `Bearer ${token}` } })
+}
+
+export function listTrendingItems() {
+  return request('/recommendations/trending')
+}
+
+export function listSimilarItems(itemId) {
+  return request(`/recommendations/similar/${itemId}`)
+}
+
+export function listWishlist(token) {
+  return request('/recommendations/wishlist', { headers: { Authorization: `Bearer ${token}` } })
+}
+
+export function recordItemActivity(itemId, token) {
+  return request(`/recommendations/activity/${itemId}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+}
+
+export function addToWishlist(itemId, token) {
+  return request(`/recommendations/wishlist/${itemId}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+}
+
+export function removeFromWishlist(itemId, token) {
+  return request(`/recommendations/wishlist/${itemId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+}
+
+export function listDisputes(token) {
+  return request('/disputes', { headers: { Authorization: `Bearer ${token}` } })
+}
+
+export function openDispute(bookingId, input, token) {
+  return request(`/disputes/bookings/${bookingId}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(input) })
+}
+
+export function listNotifications(token) {
+  return request('/notifications', { headers: { Authorization: `Bearer ${token}` } })
+}
+
+export function markNotificationRead(id, token) {
+  return request(`/notifications/${id}/read`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+}

@@ -12,18 +12,22 @@ export function issueToken(user) {
 }
 
 export async function requireAuth(req, res, next) {
-  const header = req.get('authorization')
-  if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'Authentication required' })
-  let claims
   try {
-    claims = jwt.verify(header.slice(7), getSecret())
-  } catch {
-    return res.status(401).json({ error: 'Invalid or expired token' })
+    const header = req.get('authorization')
+    if (!header?.startsWith('Bearer ')) return res.status(401).json({ error: 'Authentication required' })
+    let claims
+    try {
+      claims = jwt.verify(header.slice(7), getSecret())
+    } catch {
+      return res.status(401).json({ error: 'Invalid or expired token' })
+    }
+    const user = await User.findOne({ id: claims.sub }).select('id tokenVersion isActive role name email').lean()
+    if (!user || !user.isActive || user.tokenVersion !== claims.ver) return res.status(401).json({ error: 'Session has been invalidated' })
+    req.auth = { ...claims, role: user.role, name: user.name, email: user.email }
+    return next()
+  } catch (error) {
+    return next(error)
   }
-  const user = await User.findOne({ id: claims.sub }).select('id tokenVersion isActive').lean()
-  if (!user || !user.isActive || user.tokenVersion !== claims.ver) return res.status(401).json({ error: 'Session has been invalidated' })
-  req.auth = claims
-  return next()
 }
 
 export function requireRole(...roles) {

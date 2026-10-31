@@ -16,6 +16,19 @@ const bookingSchema = new mongoose.Schema({
   extensionRequestedEndDate: { type: Date },
   extensionStatus: { type: String, enum: ['none', 'pending', 'approved', 'rejected'], default: 'none' },
   reminderSentAt: { type: Date },
+  remindersSent: { type: [String], default: [] },
+  statusHistory: {
+    type: [{
+      status: { type: String, required: true },
+      by: { type: String, required: true },
+      at: { type: Date, required: true }
+    }],
+    default: []
+  },
+  cancelledBy: { type: String, default: '' },
+  cancelReason: { type: String, default: '' },
+  handoverAt: { type: Date },
+  returnedAt: { type: Date },
   paymentVerified: { type: Boolean, default: false },
   status: { type: String, enum: ['Pending', 'Approved', 'Rejected', 'Payment Pending', 'Confirmed', 'Active', 'Return Pending', 'Returned', 'Cancelled', 'Overdue', 'Disputed'], default: 'Pending', index: true }
 }, { timestamps: true, versionKey: false })

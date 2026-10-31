@@ -7,7 +7,12 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test",
-    "check": "node --check src/server.js"
+    "check": "node --check src/server.js",
+    "lint": "eslint src test",
+    "migrate:user-roles": "node scripts/migrate-user-roles.js",
+    "seed:categories": "node scripts/seed-categories.js",
+    "migrate:coordinates": "node scripts/migrate-coordinates.js",
+    "seed:admin": "node scripts/seed-admin.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -15,12 +20,20 @@
     "cors": "^2.8.5",
     "dotenv": "^18.0.9",
     "express": "^4.21.2",
+    "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^8.7.2",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^9.11.4",
+    "morgan": "^1.12.1",
     "multer": "^2.5.0",
     "nodemailer": "^10.3.1",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1",
     "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "eslint": "^10.14.0",
+    "supertest": "^7.3.1"
   }
 }

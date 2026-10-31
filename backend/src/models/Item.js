@@ -22,8 +22,15 @@ const itemSchema = new mongoose.Schema({
   ownerId: { type: String, required: true, index: true },
   ownerName: { type: String, required: true },
   rating: { type: Number, min: 0, max: 5, default: 0 },
+  status: { type: String, enum: ['active', 'inactive', 'flagged', 'suspended'], default: 'active', index: true },
+  borrowCount: { type: Number, default: 0, index: true },
+  viewCount: { type: Number, default: 0, index: true },
   available: { type: Boolean, default: true, index: true },
-  isActive: { type: Boolean, default: true, index: true }
+  isActive: { type: Boolean, default: true, index: true },
+  deletedAt: { type: Date, index: true },
+  bookingVersion: { type: Number, default: 0 }
 }, { timestamps: true, versionKey: false })
+
+itemSchema.index({ title: 'text', description: 'text', category: 'text' })
 
 export const Item = mongoose.models.Item || mongoose.model('Item', itemSchema)

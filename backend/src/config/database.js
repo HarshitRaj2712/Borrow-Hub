@@ -13,3 +13,7 @@ export async function connectDatabase() {
   console.log(`MongoDB connected to ${mongoose.connection.host}`)
   return { connected: true, mode: 'mongodb' }
 }
+
+export async function disconnectDatabase() {
+  await mongoose.disconnect()
+}
