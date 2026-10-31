@@ -4,10 +4,11 @@ import { Availability } from '../models/Availability.js'
 import { Booking } from '../models/Booking.js'
 import { Item } from '../models/Item.js'
 import { requireAuth } from '../middleware/auth.js'
+import { ACTIVE_BOOKING_STATUSES } from '../constants/booking.js'
 
 const router = Router()
 const dateRangeSchema = z.object({ startDate: z.coerce.date(), endDate: z.coerce.date() }).refine(value => value.endDate > value.startDate, { message: 'End date must be after start date', path: ['endDate'] })
-const activeStatuses = ['Approved', 'Payment Pending', 'Confirmed', 'Active', 'Return Pending']
+const activeStatuses = ACTIVE_BOOKING_STATUSES
 
 router.get('/items/:itemId', async (req, res, next) => {
   try {
