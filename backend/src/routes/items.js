@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
-import { getStore, persist } from '../config/store.js'
+import { Item } from '../models/Item.js'
 import { requireAuth } from '../middleware/auth.js'
 
 const router = Router()
@@ -28,35 +28,32 @@ const locationQuerySchema = z.object({
 
 router.get('/', async (req, res, next) => {
   try {
-    const store = await getStore()
     const location = locationQuerySchema.parse(req.query)
-    const query = String(req.query.q || '').toLowerCase()
-    const category = String(req.query.category || '')
-    const minPrice = Number(req.query.minPrice || 0)
-    const maxPrice = Number(req.query.maxPrice || Number.MAX_SAFE_INTEGER)
+    const query = String(req.query.q || '').trim()
+    const filters = { available: true }
+    if (query) filters.$or = [{ title: new RegExp(escapeRegex(query), 'i') }, { description: new RegExp(escapeRegex(query), 'i') }, { category: new RegExp(escapeRegex(query), 'i') }]
+    if (req.query.category) filters.category = String(req.query.category)
+    if (req.query.minPrice !== undefined) filters.pricePerDay = { ...filters.pricePerDay, $gte: Number(req.query.minPrice) }
+    if (req.query.maxPrice !== undefined) filters.pricePerDay = { ...filters.pricePerDay, $lte: Number(req.query.maxPrice) }
+    let items = await Item.find(filters).lean()
+    items = items.map(item => location.lat === undefined || item.location.lat === undefined ? item : { ...item, distanceKm: distanceInKm(location.lat, location.lng, item.location.lat, item.location.lng) })
+      .filter(item => location.lat === undefined || item.distanceKm === undefined || item.distanceKm <= location.radius)
+      .sort((a, b) => location.sort === 'distance' ? (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity) : location.sort === 'priceAsc' ? a.pricePerDay - b.pricePerDay : location.sort === 'priceDesc' ? b.pricePerDay - a.pricePerDay : new Date(b.createdAt) - new Date(a.createdAt))
     const page = Math.max(Number(req.query.page || 1), 1)
     const limit = Math.min(Math.max(Number(req.query.limit || 12), 1), 50)
-    const filtered = store.items
-      .filter(item => item.available && (!query || `${item.title} ${item.description} ${item.category}`.toLowerCase().includes(query)) && (!category || item.category === category) && item.pricePerDay >= minPrice && item.pricePerDay <= maxPrice)
-      .map(item => {
-        if (location.lat === undefined || item.location.lat === undefined || item.location.lng === undefined) return item
-        return { ...item, distanceKm: distanceInKm(location.lat, location.lng, item.location.lat, item.location.lng) }
-      })
-      .filter(item => location.lat === undefined || item.distanceKm === undefined || item.distanceKm <= location.radius)
-      .sort((a, b) => {
-        if (location.sort === 'distance') return (a.distanceKm ?? Number.MAX_SAFE_INTEGER) - (b.distanceKm ?? Number.MAX_SAFE_INTEGER)
-        if (location.sort === 'priceAsc') return a.pricePerDay - b.pricePerDay
-        if (location.sort === 'priceDesc') return b.pricePerDay - a.pricePerDay
-        return new Date(b.createdAt) - new Date(a.createdAt)
-      })
-    const start = (page - 1) * limit
-    res.json({ data: filtered.slice(start, start + limit), pagination: { page, limit, total: filtered.length, pages: Math.ceil(filtered.length / limit) } })
+    res.json({ data: items.slice((page - 1) * limit, page * limit), pagination: { page, limit, total: items.length, pages: Math.ceil(items.length / limit) } })
+  } catch (error) { next(error) }
+})
+
+router.get('/mine', requireAuth, async (req, res, next) => {
+  try {
+    res.json({ data: await Item.find({ ownerId: req.auth.sub }).sort({ createdAt: -1 }).lean() })
   } catch (error) { next(error) }
 })
 
 router.get('/:id', async (req, res, next) => {
   try {
-    const item = (await getStore()).items.find(candidate => candidate.id === req.params.id)
+    const item = await Item.findOne({ id: req.params.id }).lean()
     if (!item) return res.status(404).json({ error: 'Item not found' })
     res.json({ data: item })
   } catch (error) { next(error) }
@@ -65,58 +62,43 @@ router.get('/:id', async (req, res, next) => {
 router.post('/', requireAuth, async (req, res, next) => {
   try {
     const input = itemSchema.parse(req.body)
-    const store = await getStore()
-    const user = store.users.find(candidate => candidate.id === req.auth.sub)
     const { city, area, lat, lng, ...details } = input
-    const item = { id: `item-${crypto.randomUUID()}`, ...details, location: { city, area, ...(lat !== undefined && lng !== undefined ? { lat, lng } : {}) }, ownerId: user.id, ownerName: user.name, rating: 0, available: true, createdAt: new Date().toISOString() }
-    store.items.unshift(item)
-    await persist()
+    const item = await Item.create({ id: `item-${crypto.randomUUID()}`, ...details, location: { city, area, ...(lat !== undefined ? { lat, lng } : {}) }, ownerId: req.auth.sub, ownerName: req.auth.name || req.auth.email, available: true })
     res.status(201).json({ data: item })
   } catch (error) { next(error) }
 })
 
 router.patch('/:id', requireAuth, async (req, res, next) => {
   try {
-    const store = await getStore()
-    const item = store.items.find(candidate => candidate.id === req.params.id)
+    const input = itemSchema.partial().parse(req.body)
+    const item = await Item.findOne({ id: req.params.id })
     if (!item) return res.status(404).json({ error: 'Item not found' })
     if (item.ownerId !== req.auth.sub) return res.status(403).json({ error: 'Only the owner can update this item' })
-    const input = itemSchema.partial().parse(req.body)
     const { city, area, lat, lng, ...details } = input
     Object.assign(item, details)
-    if (city || area || lat !== undefined || lng !== undefined) {
-      item.location = {
-        ...item.location,
-        ...(city ? { city } : {}),
-        ...(area ? { area } : {}),
-        ...(lat !== undefined ? { lat } : {}),
-        ...(lng !== undefined ? { lng } : {})
-      }
-    }
-    await persist()
+    if (city || area || lat !== undefined || lng !== undefined) Object.assign(item.location, { ...(city ? { city } : {}), ...(area ? { area } : {}), ...(lat !== undefined ? { lat } : {}), ...(lng !== undefined ? { lng } : {}) })
+    await item.save()
     res.json({ data: item })
   } catch (error) { next(error) }
 })
 
 router.delete('/:id', requireAuth, async (req, res, next) => {
   try {
-    const store = await getStore()
-    const index = store.items.findIndex(candidate => candidate.id === req.params.id)
-    if (index < 0) return res.status(404).json({ error: 'Item not found' })
-    if (store.items[index].ownerId !== req.auth.sub) return res.status(403).json({ error: 'Only the owner can delete this item' })
-    store.items.splice(index, 1)
-    await persist()
+    const item = await Item.findOne({ id: req.params.id })
+    if (!item) return res.status(404).json({ error: 'Item not found' })
+    if (item.ownerId !== req.auth.sub) return res.status(403).json({ error: 'Only the owner can delete this item' })
+    await item.deleteOne()
     res.status(204).end()
   } catch (error) { next(error) }
 })
 
-export default router
-
+function escapeRegex(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
 function distanceInKm(latitudeA, longitudeA, latitudeB, longitudeB) {
   const radians = value => value * Math.PI / 180
   const latitudeDelta = radians(latitudeB - latitudeA)
   const longitudeDelta = radians(longitudeB - longitudeA)
-  const a = Math.sin(latitudeDelta / 2) ** 2
-    + Math.cos(radians(latitudeA)) * Math.cos(radians(latitudeB)) * Math.sin(longitudeDelta / 2) ** 2
+  const a = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(radians(latitudeA)) * Math.cos(radians(latitudeB)) * Math.sin(longitudeDelta / 2) ** 2
   return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
+
+export default router

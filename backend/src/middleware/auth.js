@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 const secret = process.env.JWT_SECRET || 'borrow-hub-development-secret'
 
 export function issueToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role, email: user.email }, secret, { expiresIn: '2h' })
+  return jwt.sign({ sub: user.id, role: user.role, email: user.email, name: user.name }, secret, { expiresIn: '2h' })
 }
 
 export function requireAuth(req, res, next) {
