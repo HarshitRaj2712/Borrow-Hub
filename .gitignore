@@ -1,7 +1,7 @@
 # Dependencies
 node_modules/
-.Readme.md
-.CONFIGURATION.md
+README.md
+CONFIGURATION.md
 # Environment files and secrets
 .env
 .env.*
