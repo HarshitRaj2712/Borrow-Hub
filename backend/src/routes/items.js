@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { Item } from '../models/Item.js'
 import { Category } from '../models/Category.js'
 import { User } from '../models/User.js'
-import { requireAuth } from '../middleware/auth.js'
+import { requireAuth, requireRole } from '../middleware/auth.js'
 import { itemSchema, itemUpdateSchema } from '../validators/item.js'
 import { publicItem } from '../utils/publicItem.js'
 import { Report } from '../models/Report.js'
@@ -84,7 +84,7 @@ router.get('/', async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
-router.get('/mine', requireAuth, async (req, res, next) => {
+router.get('/mine', requireAuth, requireRole('lender'), async (req, res, next) => {
   try {
     res.json({ data: await Item.find({ ownerId: req.auth.sub, deletedAt: null }).sort({ createdAt: -1 }).lean() })
   } catch (error) { next(error) }
@@ -120,19 +120,20 @@ router.get('/:id', async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
-router.post('/', requireAuth, async (req, res, next) => {
+router.post('/', requireAuth, requireRole('lender'), async (req, res, next) => {
   try {
     const input = itemSchema.parse(req.body)
     const { city, area, lat, lng, ...details } = input
     if (!await Category.exists({ name: details.category, isActive: true })) return res.status(400).json({ error: 'Invalid or inactive item category' })
-    const owner = await User.findOne({ id: req.auth.sub, isActive: true }).select('name').lean()
+    const owner = await User.findOne({ id: req.auth.sub, isActive: true }).select('name emailVerified').lean()
     if (!owner) return res.status(401).json({ error: 'Active user account required' })
+    if (!owner.emailVerified) return res.status(403).json({ error: 'Verify your account before creating a listing' })
     const item = await Item.create({ id: `item-${crypto.randomUUID()}`, ...details, location: { city, area, ...(lat !== undefined ? { lat, lng, coordinates: [lng, lat] } : {}) }, ownerId: req.auth.sub, ownerName: owner.name, status: 'active', available: true, isActive: true })
     res.status(201).json({ data: publicItem(item) })
   } catch (error) { next(error) }
 })
 
-router.patch('/:id', requireAuth, async (req, res, next) => {
+router.patch('/:id', requireAuth, requireRole('lender'), async (req, res, next) => {
   try {
     const input = itemUpdateSchema.parse(req.body)
     const item = await Item.findOne({ id: req.params.id, deletedAt: null })
@@ -147,7 +148,7 @@ router.patch('/:id', requireAuth, async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
-router.patch('/:id/availability', requireAuth, async (req, res, next) => {
+router.patch('/:id/availability', requireAuth, requireRole('lender'), async (req, res, next) => {
   try {
     const active = z.object({ active: z.boolean() }).parse(req.body).active
     const item = await Item.findOne({ id: req.params.id, deletedAt: null })
@@ -160,7 +161,7 @@ router.patch('/:id/availability', requireAuth, async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
-router.post('/:id/images', requireAuth, imageUpload.single('image'), async (req, res, next) => {
+router.post('/:id/images', requireAuth, requireRole('lender'), imageUpload.single('image'), async (req, res, next) => {
   try {
     validateImageUpload(req.file)
     const item = await Item.findOne({ id: req.params.id, deletedAt: null })
@@ -174,7 +175,7 @@ router.post('/:id/images', requireAuth, imageUpload.single('image'), async (req,
   } catch (error) { next(error) }
 })
 
-router.patch('/:id/images/order', requireAuth, async (req, res, next) => {
+router.patch('/:id/images/order', requireAuth, requireRole('lender'), async (req, res, next) => {
   try {
     const publicIds = z.array(z.string().min(1)).max(6).parse(req.body)
     const item = await Item.findOne({ id: req.params.id, deletedAt: null })
@@ -188,7 +189,7 @@ router.patch('/:id/images/order', requireAuth, async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
-router.delete('/:id/images/:publicId', requireAuth, async (req, res, next) => {
+router.delete('/:id/images/:publicId', requireAuth, requireRole('lender'), async (req, res, next) => {
   try {
     const publicId = decodeURIComponent(req.params.publicId)
     const item = await Item.findOne({ id: req.params.id, deletedAt: null })
@@ -214,7 +215,7 @@ router.post('/:id/reports', requireAuth, async (req, res, next) => {
   } catch (error) { next(error) }
 })
 
-router.delete('/:id', requireAuth, async (req, res, next) => {
+router.delete('/:id', requireAuth, requireRole('lender'), async (req, res, next) => {
   try {
     const item = await Item.findOne({ id: req.params.id, deletedAt: null })
     if (!item) return res.status(404).json({ error: 'Item not found' })

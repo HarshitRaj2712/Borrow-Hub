@@ -16,5 +16,6 @@ export function publicUser(user) {
     'avatarPublicId',
     'tokenVersion'
   ]) delete plain[field]
+  if (plain.role === 'user') plain.role = 'borrower'
   return plain
 }

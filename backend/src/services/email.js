@@ -84,11 +84,22 @@ function createTransporter() {
     error.code = 'EMAIL_NOT_CONFIGURED'
     throw error
   }
+  const port = Number(process.env.SMTP_PORT)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    const error = new Error('Email delivery is not configured. SMTP_PORT must be a valid port number.')
+    error.code = 'EMAIL_NOT_CONFIGURED'
+    throw error
+  }
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: Number(process.env.SMTP_PORT) === 465,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD }
+    port,
+    secure: port === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_HOST.toLowerCase() === 'smtp.gmail.com'
+        ? process.env.SMTP_PASSWORD.replace(/\s+/g, '')
+        : process.env.SMTP_PASSWORD
+    }
   })
 }
 

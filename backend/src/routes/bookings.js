@@ -67,8 +67,10 @@ router.post('/items/:itemId/requests', requireAuth, async (req, res, next) => {
     const startDate = utcDateOnly(input.startDate)
     const endDate = utcDateOnly(input.endDate)
     if (endDate <= startDate) return res.status(400).json({ error: 'Booking dates must span at least one whole day' })
-    const borrower = await User.findOne({ id: req.auth.sub, isActive: true }).select('emailVerified identityVerified').lean()
-    if (!borrower?.emailVerified) return res.status(403).json({ error: 'Verify your email before requesting a booking' })
+    const borrower = await User.findOne({ id: req.auth.sub, isActive: true }).select('role emailVerified identityVerified').lean()
+    const borrowerRole = borrower?.role === 'user' ? 'borrower' : borrower?.role
+    if (borrowerRole !== 'borrower') return res.status(403).json({ error: 'Only borrower accounts can request items' })
+    if (!borrower.emailVerified) return res.status(403).json({ error: 'Verify your account before requesting a booking' })
     if (process.env.REQUIRE_IDENTITY_FOR_BOOKING === 'true' && !borrower.identityVerified) return res.status(403).json({ error: 'Identity verification is required before requesting a booking' })
     if (startDate < startOfToday()) return res.status(400).json({ error: 'Start date cannot be in the past' })
     const days = wholeDays(startDate, endDate)

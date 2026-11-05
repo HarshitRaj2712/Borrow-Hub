@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
   },
   passwordResetTokenHash: { type: String, select: false },
   passwordResetTokenExpiresAt: { type: Date, select: false },
-  role: { type: String, enum: ['user', 'admin'], default: 'user', index: true },
+  role: { type: String, enum: ['user', 'borrower', 'lender', 'admin'], default: 'borrower', index: true },
   gender: { type: String, enum: ['male', 'female', 'non_binary', 'prefer_not_to_say'], default: 'prefer_not_to_say' },
   emailVerified: { type: Boolean, default: false },
   phoneVerified: { type: Boolean, default: false },

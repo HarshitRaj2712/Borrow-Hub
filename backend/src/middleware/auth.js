@@ -7,8 +7,13 @@ function getSecret() {
   return secret
 }
 
+function getTokenVersion(value) {
+  const version = Number(value)
+  return Number.isInteger(version) && version >= 0 ? version : 0
+}
+
 export function issueToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role, email: user.email, name: user.name, ver: user.tokenVersion || 0 }, getSecret(), { expiresIn: '15m' })
+  return jwt.sign({ sub: user.id, role: user.role, email: user.email, name: user.name, ver: getTokenVersion(user.tokenVersion) }, getSecret(), { expiresIn: '15m' })
 }
 
 export async function requireAuth(req, res, next) {
@@ -22,8 +27,10 @@ export async function requireAuth(req, res, next) {
       return res.status(401).json({ error: 'Invalid or expired token' })
     }
     const user = await User.findOne({ id: claims.sub }).select('id tokenVersion isActive role name email').lean()
-    if (!user || !user.isActive || user.tokenVersion !== claims.ver) return res.status(401).json({ error: 'Session has been invalidated' })
-    req.auth = { ...claims, role: user.role, name: user.name, email: user.email }
+    const tokenVersion = getTokenVersion(user?.tokenVersion)
+    const claimVersion = getTokenVersion(claims.ver)
+    if (!user || !user.isActive || tokenVersion !== claimVersion) return res.status(401).json({ error: 'Session has been invalidated' })
+    req.auth = { ...claims, role: user.role === 'user' ? 'borrower' : user.role, name: user.name, email: user.email }
     return next()
   } catch (error) {
     return next(error)

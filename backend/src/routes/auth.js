@@ -6,29 +6,41 @@ import { User } from '../models/User.js'
 import { issueToken, requireAuth } from '../middleware/auth.js'
 import { createPasswordResetToken, createVerificationToken, hashToken, sendPasswordResetEmail, sendVerificationEmail } from '../services/email.js'
 import { publicUser } from '../utils/serializers.js'
+import multer from 'multer'
+import { uploadAvatar } from '../services/cloudinary.js'
+import { validateImageUpload } from '../utils/upload.js'
 
 const router = Router()
+const profileImageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } })
+const emailSchema = z.string().trim().email().transform(value => value.toLowerCase())
 const registerSchema = z.object({
   name: z.string().trim().min(2),
-  email: z.string().email().transform(value => value.toLowerCase()),
+  email: emailSchema,
   phone: z.string().trim().min(7),
   password: z.string().min(8).max(72),
-  role: z.enum(['user', 'member', 'borrower', 'lender']).transform(() => 'user').default('user'),
+  role: z.enum(['user', 'member', 'borrower', 'lender']).transform(value => ['user', 'member'].includes(value) ? 'borrower' : value).default('borrower'),
   gender: z.enum(['male', 'female', 'non_binary', 'prefer_not_to_say']).default('prefer_not_to_say')
 })
-const loginSchema = z.object({ email: z.string().email().transform(value => value.toLowerCase()), password: z.string().min(1) })
+const loginSchema = z.object({ email: emailSchema, password: z.string().min(1) })
 const refreshSchema = z.object({ refreshToken: z.string().regex(/^[a-f0-9]{64}$/) })
 const logoutSchema = z.object({ refreshToken: z.string().regex(/^[a-f0-9]{64}$/).optional() })
-const forgotPasswordSchema = z.object({ email: z.string().email().transform(value => value.toLowerCase()) })
+const forgotPasswordSchema = z.object({ email: emailSchema })
 const resetPasswordSchema = z.object({ token: z.string().regex(/^[a-f0-9]{64}$/), password: z.string().min(8).max(72) })
-const reactivateSchema = z.object({ email: z.string().email().transform(value => value.toLowerCase()), password: z.string().min(1) })
+const reactivateSchema = z.object({ email: emailSchema, password: z.string().min(1) })
 
-router.post('/register', async (req, res, next) => {
+router.post('/register', profileImageUpload.single('profileImage'), async (req, res, next) => {
   try {
     const input = registerSchema.parse(req.body)
     if (await User.exists({ email: input.email })) return res.status(409).json({ error: 'An account with this email already exists' })
     const verification = createVerificationToken()
-    const user = await User.create({ id: `user-${crypto.randomUUID()}`, name: input.name, email: input.email, phone: input.phone, passwordHash: await bcrypt.hash(input.password, 12), role: input.role, gender: input.gender, emailVerified: false, phoneVerified: false, identityVerified: false, verificationTokenHash: verification.hash, verificationTokenExpiresAt: verification.expiresAt, location: {}, bio: '', isActive: true })
+    const userId = `user-${crypto.randomUUID()}`
+    let avatar = {}
+    if (req.file) {
+      validateImageUpload(req.file)
+      const result = await uploadAvatar(req.file.buffer, userId)
+      avatar = { avatarUrl: result.secure_url, avatarPublicId: result.public_id }
+    }
+    const user = await User.create({ id: userId, name: input.name, email: input.email, phone: input.phone, passwordHash: await bcrypt.hash(input.password, 12), role: input.role, gender: input.gender, ...avatar, emailVerified: false, phoneVerified: false, identityVerified: false, verificationTokenHash: verification.hash, verificationTokenExpiresAt: verification.expiresAt, location: {}, bio: '', isActive: true })
     let verificationEmailSent = true
     let verificationMessage = 'Verification email sent.'
     try { await sendVerificationEmail(user, verification.token) } catch (error) { verificationEmailSent = false; verificationMessage = error.message; console.warn(verificationMessage) }
@@ -100,7 +112,10 @@ router.post('/forgot-password', async (req, res, next) => {
       const reset = createPasswordResetToken()
       user.passwordResetTokenHash = reset.hash
       user.passwordResetTokenExpiresAt = reset.expiresAt
-      await user.save()
+      await User.updateOne(
+        { id: user.id },
+        { $set: { passwordResetTokenHash: reset.hash, passwordResetTokenExpiresAt: reset.expiresAt } }
+      )
       try {
         await sendPasswordResetEmail(user, reset.token)
       } catch (error) {
@@ -116,12 +131,15 @@ router.post('/reset-password', async (req, res, next) => {
     const input = resetPasswordSchema.parse(req.body)
     const user = await User.findOne({ passwordResetTokenHash: hashToken(input.token), passwordResetTokenExpiresAt: { $gt: new Date() } }).select('+passwordHash +passwordResetTokenHash +passwordResetTokenExpiresAt +refreshTokens')
     if (!user) return res.status(400).json({ error: 'Invalid or expired password reset token' })
-    user.passwordHash = await bcrypt.hash(input.password, 12)
-    user.passwordResetTokenHash = undefined
-    user.passwordResetTokenExpiresAt = undefined
-    user.tokenVersion += 1
-    user.refreshTokens = []
-    await user.save()
+    const passwordHash = await bcrypt.hash(input.password, 12)
+    await User.updateOne(
+      { id: user.id },
+      {
+        $set: { passwordHash, refreshTokens: [] },
+        $unset: { passwordResetTokenHash: 1, passwordResetTokenExpiresAt: 1 },
+        $inc: { tokenVersion: 1 }
+      }
+    )
     res.json({ data: { message: 'Password reset successfully. Please sign in again.' } })
   } catch (error) { next(error) }
 })
@@ -164,8 +182,10 @@ router.post('/resend-verification', requireAuth, async (req, res, next) => {
 async function issueSession(user, userAgent = '', replaceHash) {
   const refreshToken = crypto.randomBytes(32).toString('hex')
   const refreshEntry = { hash: hashToken(refreshToken), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), userAgent: '' }
-  user.refreshTokens = [...(user.refreshTokens || []).filter(entry => entry.expiresAt > new Date() && entry.hash !== replaceHash), { ...refreshEntry, userAgent: userAgent || '' }].slice(-5)
-  await user.save()
+  const refreshTokens = [...(user.refreshTokens || []).filter(entry => entry.expiresAt > new Date() && entry.hash !== replaceHash), { ...refreshEntry, userAgent: userAgent || '' }].slice(-5)
+  const tokenVersion = Number.isInteger(user.tokenVersion) && user.tokenVersion >= 0 ? user.tokenVersion : 0
+  user.tokenVersion = tokenVersion
+  await User.updateOne({ id: user.id }, { $set: { refreshTokens, tokenVersion } })
   return { token: issueToken(user), refreshToken }
 }
 

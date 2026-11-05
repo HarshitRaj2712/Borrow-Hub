@@ -1,15 +1,120 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api'
 
-async function request(path, options = {}) {
-  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: { ...(options.body && !isFormData ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) }
-  })
-  const payload = response.status === 204 ? null : await response.json()
-  if (!response.ok) throw new Error(payload?.error || 'Request failed')
-  return payload
+
+let refreshPromise = null;
+
+async function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = (async () => {
+      const storedSession = localStorage.getItem('borrow-hub-session');
+
+      if (!storedSession) {
+        throw new Error('No saved session found');
+      }
+
+      const session = JSON.parse(storedSession);
+
+      if (!session.refreshToken) {
+        throw new Error('No refresh token found');
+      }
+
+      const response = await fetch(`${API_URL}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          refreshToken: session.refreshToken
+        })
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Session refresh failed');
+      }
+
+      const updatedSession = {
+        ...session,
+        ...payload.data
+      };
+
+      localStorage.setItem(
+        'borrow-hub-session',
+        JSON.stringify(updatedSession)
+      );
+
+      return updatedSession.token;
+    })().finally(() => {
+      refreshPromise = null;
+    });
+  }
+
+  return refreshPromise;
 }
+
+async function request(path, options = {}, retry = true) {
+  const isFormData =
+    typeof FormData !== 'undefined' &&
+    options.body instanceof FormData;
+
+  const headers = {
+    ...(options.body && !isFormData
+      ? { 'Content-Type': 'application/json' }
+      : {}),
+    ...(options.headers || {})
+  };
+
+  let response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers
+  });
+
+  // If an authenticated request returns 401, try refreshing the token.
+  if (
+    response.status === 401 &&
+    retry &&
+    headers.Authorization &&
+    path !== '/auth/refresh'
+  ) {
+    try {
+      const newToken = await refreshAccessToken();
+
+      return request(
+        path,
+        {
+          ...options,
+          headers: {
+            ...headers,
+            Authorization: `Bearer ${newToken}`
+          }
+        },
+        false
+      );
+    } catch (error) {
+      localStorage.removeItem('borrow-hub-session');
+
+      if (
+        window.location.pathname !== '/signin' &&
+        window.location.pathname !== '/signup'
+      ) {
+        window.location.href = '/signin';
+      }
+
+      throw new Error('Your session has expired. Please sign in again.');
+    }
+  }
+
+  const payload =
+    response.status === 204 ? null : await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload?.error || 'Request failed');
+  }
+
+  return payload;
+}
+
 
 export function listItems(params = {}) {
   const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== ''))
@@ -24,8 +129,24 @@ export function createItem(input, token) {
   return request('/items', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(input) })
 }
 
-export function registerUser(input) {
-  return request('/auth/register', { method: 'POST', body: JSON.stringify(input) })
+export function updateItem(id, input, token) {
+  return request(`/items/${id}`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify(input) })
+}
+
+export function deleteItem(id, token) {
+  return request(`/items/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
+}
+
+export function updateItemAvailability(id, active, token) {
+  return request(`/items/${id}/availability`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ active }) })
+}
+
+export function registerUser(input, profileImage) {
+  if (!profileImage) return request('/auth/register', { method: 'POST', body: JSON.stringify(input) })
+  const body = new FormData()
+  Object.entries(input).forEach(([key, value]) => body.append(key, value))
+  body.append('profileImage', profileImage)
+  return request('/auth/register', { method: 'POST', body })
 }
 
 export function loginUser(input) {
@@ -88,10 +209,6 @@ export function uploadAvatar(file, token) {
   const body = new FormData()
   body.append('avatar', file)
   return request('/users/me/avatar', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body })
-}
-
-export function updateItemAvailability(id, active, token) {
-  return request(`/items/${id}/availability`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}` }, body: JSON.stringify({ active }) })
 }
 
 export function reportItem(id, reason, token) {
